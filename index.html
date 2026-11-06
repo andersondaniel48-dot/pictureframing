@@ -1,0 +1,787 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0E1014">
+<title>Plumb — hang pictures centered, by voice</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0E1014; --surface: #181B21; --surface2: #22262E; --line: #2E333C; --line2: #3A404B;
+    --text: #F2F4F7; --muted: #A3AAB6; --soft: #C9CED6;
+    --green: #39E58C; --amber: #FFB020; --red: #FF5A5F;
+    --display: 'Space Grotesk', system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); font-family: Inter, system-ui, sans-serif; -webkit-tap-highlight-color: transparent; }
+  body { min-height: 100dvh; display: flex; flex-direction: column; padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom); }
+  button, input { font: inherit; color: inherit; }
+  button { cursor: pointer; }
+  button:disabled { opacity: 0.4; cursor: default; }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 16px; height: 68px; }
+  .brand { display: flex; align-items: center; gap: 8px; color: var(--green); }
+  .brand span { font-family: var(--display); font-weight: 700; font-size: 22px; color: var(--text); }
+  .iconbtn { width: 44px; height: 44px; border-radius: 22px; border: 1px solid var(--line); background: var(--surface); display: flex; align-items: center; justify-content: center; padding: 0; flex-shrink: 0; }
+  .chip { padding: 8px 14px; border-radius: 999px; background: var(--surface); border: 1px solid var(--line); font-size: 13px; font-weight: 500; color: var(--soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  main { flex: 1; display: flex; flex-direction: column; width: 100%; max-width: 560px; margin: 0 auto; padding: 0 16px 20px; gap: 14px; }
+  .screen { display: flex; flex-direction: column; gap: 14px; flex: 1; }
+  .screen[hidden] { display: none; }
+  h1 { margin: 0; font-family: var(--display); font-weight: 600; font-size: 28px; line-height: 1.12; letter-spacing: -0.02em; }
+  p { margin: 0; line-height: 1.45; }
+  .muted { color: var(--muted); font-size: 15px; }
+  .small { font-size: 13px; color: var(--muted); line-height: 1.45; }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+  .label { font-size: 12px; font-weight: 600; letter-spacing: 0.06em; color: var(--muted); text-transform: uppercase; }
+  .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  .grid3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  .field { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--muted); }
+  .inbox { display: flex; align-items: center; height: 52px; border-radius: 12px; background: var(--surface2); border: 1px solid var(--line2); padding: 0 14px; }
+  .inbox input { width: 100%; background: transparent; border: 0; font-family: var(--display); font-size: 22px; font-weight: 600; outline: none; min-width: 0; }
+  .inbox span { font-size: 14px; color: var(--muted); }
+  .seg { display: grid; gap: 4px; background: var(--surface2); border-radius: 12px; padding: 4px; }
+  .seg button { height: 42px; border-radius: 9px; border: 0; background: transparent; color: var(--soft); font-size: 14px; font-weight: 600; }
+  .seg button[aria-pressed="true"] { background: var(--green); color: var(--bg); }
+  .stepper { display: flex; align-items: center; gap: 6px; }
+  .stepper button { width: 44px; height: 44px; border-radius: 12px; border: 1px solid var(--line2); background: var(--surface2); font-size: 22px; padding: 0; }
+  .stepper output { min-width: 62px; text-align: center; font-family: var(--display); font-size: 20px; font-weight: 600; }
+  .primary { margin-top: auto; height: 56px; border-radius: 16px; border: 0; background: var(--green); color: var(--bg); font-family: var(--display); font-weight: 600; font-size: 18px; display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; }
+  .secondary { height: 48px; border-radius: 14px; border: 1px solid var(--line2); background: var(--surface); font-weight: 600; font-size: 15px; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 0 14px; }
+  .option { text-align: left; border-radius: 20px; border: 2px solid var(--line); background: var(--surface); padding: 18px; display: flex; flex-direction: column; gap: 6px; width: 100%; }
+  .option[aria-pressed="true"] { border-color: var(--green); }
+  .option strong { font-family: var(--display); font-weight: 600; font-size: 20px; }
+  .option span { font-size: 14px; color: var(--muted); line-height: 1.45; }
+  .checks { padding: 4px 14px; gap: 0; }
+  .check { display: flex; align-items: center; gap: 12px; min-height: 44px; border-bottom: 1px solid var(--line); font-size: 15px; }
+  .check:last-child { border-bottom: 0; }
+  .check .dot { width: 20px; height: 20px; border-radius: 10px; background: var(--line2); flex-shrink: 0; }
+  .check.ok .dot { background: var(--green); }
+  .check.warn .dot { background: var(--amber); }
+  .check em { margin-left: auto; font-style: normal; font-size: 13px; color: var(--muted); }
+  ol.steps { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 8px; line-height: 1.45; font-size: 15px; color: var(--soft); }
+  #stageWrap { display: flex; justify-content: center; }
+  #stageWrap[hidden] { display: none; }
+  #stage { position: relative; border-radius: 20px; overflow: hidden; background: #000; touch-action: manipulation; }
+  #stage video, #stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+  #stage video { object-fit: fill; }
+  #stageTag { position: absolute; left: 10px; top: 10px; padding: 5px 10px; border-radius: 999px; background: rgba(14,16,20,0.8); font-size: 12px; font-weight: 600; display: flex; align-items: center; gap: 6px; pointer-events: none; }
+  #stageTag i { width: 8px; height: 8px; border-radius: 4px; background: var(--muted); }
+  #stageTag.on i { background: var(--green); }
+  #stageTag.lost i { background: var(--red); }
+  .say { display: flex; align-items: flex-start; gap: 12px; }
+  .say .bubble { width: 36px; height: 36px; border-radius: 18px; background: var(--amber); color: var(--bg); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .say.ok .bubble { background: var(--green); }
+  .say b { display: block; font-family: var(--display); font-weight: 600; font-size: 20px; line-height: 1.25; }
+  .meter { display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); gap: 4px; align-items: end; flex: 1; height: 28px; }
+  .meter i { border-radius: 2px; background: var(--line); }
+  .tile { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 10px 12px; display: flex; flex-direction: column; gap: 2px; }
+  .tile b { font-family: var(--display); font-weight: 700; font-size: 20px; }
+  .tile small { font-size: 12px; color: var(--soft); }
+  .amber { color: var(--amber); } .green { color: var(--green); }
+  .toolbar { display: flex; gap: 8px; flex-wrap: wrap; }
+  .toolbar .secondary { flex: 1 1 auto; }
+  .bigcheck { width: 56px; height: 56px; border-radius: 28px; background: var(--green); color: var(--bg); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .note { background: rgba(255,176,32,0.12); border: 1px solid rgba(255,176,32,0.4); color: #FFD27A; border-radius: 12px; padding: 10px 12px; font-size: 13px; line-height: 1.45; }
+  .note[hidden] { display: none; }
+</style>
+</head>
+<body>
+<header>
+  <button class="iconbtn" id="backBtn" aria-label="Back" hidden>
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>
+  </button>
+  <div class="brand" id="brand">
+    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2v6"/><path d="M12 8l5 6-5 8-5-8z"/></svg>
+    <span>Plumb</span>
+  </div>
+  <div class="chip" id="modeChip" hidden></div>
+  <button class="iconbtn" id="voiceBtn" aria-label="Mute voice" aria-pressed="false" hidden>
+    <svg id="voiceIcon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9z"/><path d="M16.5 8.5a5 5 0 0 1 0 7"/><path d="M19 6a8.5 8.5 0 0 1 0 12"/></svg>
+  </button>
+</header>
+
+<main>
+  <div id="stageWrap" hidden>
+    <div id="stage">
+      <video id="video" playsinline muted autoplay></video>
+      <canvas id="overlay"></canvas>
+      <div id="stageTag"><i></i><span id="stageTagText">Camera</span></div>
+    </div>
+  </div>
+
+  <!-- 1. Setup -->
+  <section class="screen" id="scr-setup">
+    <div id="setupIntro" class="screen" style="flex: 0">
+      <h1>Hang it centered, by voice</h1>
+      <p class="muted">Your phone watches the wall and talks you into position while you hold the picture up.</p>
+      <div class="card">
+        <span class="label">You'll need</span>
+        <ol class="steps">
+          <li>Two small, <b>brightly colored</b> markers: dot stickers, sticky-note squares or painter's tape.</li>
+          <li>Stick one on each <b>top corner</b> of the frame, facing out.</li>
+          <li>Something to prop the phone on: a tripod, shelf or stack of books.</li>
+        </ol>
+      </div>
+      <p class="small">Pick a marker color that doesn't appear anywhere else on the wall. Hot pink and lime green work well.</p>
+    </div>
+    <div id="setupLive" class="screen" style="flex: 0" hidden>
+      <h1>Prop your phone facing the wall</h1>
+      <p class="muted">About 6–10 ft back, at roughly the height of the picture, with the floor in view. Keep the back camera pointed straight at the wall.</p>
+      <div class="card checks">
+        <div class="check" id="chkLevel"><span class="dot"></span>Phone is level<em id="valLevel">–</em></div>
+        <div class="check" id="chkUpright"><span class="dot"></span>Standing straight up<em id="valUpright">–</em></div>
+      </div>
+      <p class="small">Left and right are from your side: you and the camera face the same way.</p>
+    </div>
+    <p class="note" id="setupError" hidden></p>
+    <button class="primary" id="startBtn">Start camera</button>
+    <button class="primary" id="setupNext" hidden>Next</button>
+  </section>
+
+  <!-- 2. Picture -->
+  <section class="screen" id="scr-picture" hidden>
+    <h1>What are you hanging?</h1>
+    <p class="muted">The frame's width is my ruler. I measure it between your two corner markers.</p>
+    <div class="card">
+      <span class="label">Frame size</span>
+      <div class="grid2">
+        <label class="field">Width<span class="inbox"><input id="inW" type="number" inputmode="decimal" step="0.25" min="2"><span>in</span></span></label>
+        <label class="field">Height<span class="inbox"><input id="inH" type="number" inputmode="decimal" step="0.25" min="2"><span>in</span></span></label>
+      </div>
+    </div>
+    <div class="card">
+      <span class="label">What's on the back</span>
+      <div class="seg" id="segHanger" style="grid-template-columns: repeat(3, minmax(0, 1fr))">
+        <button data-v="wire">Wire</button><button data-v="saw">Sawtooth</button><button data-v="rings">Two D-rings</button>
+      </div>
+      <p class="small" id="hangerHint"></p>
+      <div class="grid2">
+        <label class="field"><span id="dropLabel">Top of frame to hanger</span><span class="inbox"><input id="inDrop" type="number" inputmode="decimal" step="0.25" min="0"><span>in</span></span></label>
+        <label class="field" id="ringField">Ring to ring<span class="inbox"><input id="inRings" type="number" inputmode="decimal" step="0.25" min="0"><span>in</span></span></label>
+      </div>
+    </div>
+    <button class="primary" id="pictureNext">Continue</button>
+  </section>
+
+  <!-- 3. Mode -->
+  <section class="screen" id="scr-mode" hidden>
+    <h1>Line it up with…</h1>
+    <p class="muted">Pick what the picture should be centered on.</p>
+    <button class="option" data-mode="item"><strong>Center over an item</strong><span>A sofa, bed, mantel or dresser. I'll center it above, with the gap you choose.</span></button>
+    <button class="option" data-mode="height"><strong>At a height on the wall</strong><span>Measured up from the floor. 57 in to the center is the gallery standard.</span></button>
+    <button class="primary" id="modeNext">Continue</button>
+  </section>
+
+  <!-- 4a. Item -->
+  <section class="screen" id="scr-item" hidden>
+    <h1 id="itemTitle">Tap the item's top-left corner</h1>
+    <p class="muted" id="itemSub">Tap on the camera view above, at the top-left corner of the sofa, bed or dresser.</p>
+    <div class="card">
+      <div class="row">
+        <div><div style="font-weight: 600">Gap above the item</div><div class="small">8–10 in keeps them looking connected</div></div>
+        <div class="stepper"><button data-step="gap" data-d="-1" aria-label="Smaller gap">−</button><output id="outGap"></output><button data-step="gap" data-d="1" aria-label="Bigger gap">+</button></div>
+      </div>
+    </div>
+    <button class="secondary" id="itemRedo">Redo the taps</button>
+    <button class="primary" id="itemNext" disabled>Pick it up — I'll guide you</button>
+  </section>
+
+  <!-- 4b. Height -->
+  <section class="screen" id="scr-height" hidden>
+    <h1 id="heightTitle">Tap where the wall meets the floor</h1>
+    <p class="muted" id="heightSub">Tap on the camera view above, right below the spot where the picture will go.</p>
+    <div class="card">
+      <div class="row">
+        <div><div style="font-weight: 600" id="heightLabel">Center of picture at</div><div class="small">57 in to center is gallery standard</div></div>
+        <div class="stepper"><button data-step="height" data-d="-1" aria-label="Lower">−</button><output id="outHeight"></output><button data-step="height" data-d="1" aria-label="Higher">+</button></div>
+      </div>
+      <span class="label">Measure to the picture's</span>
+      <div class="seg" id="segAnchor" style="grid-template-columns: repeat(3, minmax(0, 1fr))">
+        <button data-v="center">Center</button><button data-v="top">Top</button><button data-v="bottom">Bottom</button>
+      </div>
+      <span class="label">Side to side</span>
+      <div class="seg" id="segSide" style="grid-template-columns: repeat(2, minmax(0, 1fr))">
+        <button data-v="none">Height only</button><button data-v="between">Center between 2 points</button>
+      </div>
+    </div>
+    <button class="secondary" id="heightRedo">Redo the taps</button>
+    <button class="primary" id="heightNext" disabled>Pick it up — I'll guide you</button>
+  </section>
+
+  <!-- 5. Live -->
+  <section class="screen" id="scr-live" hidden>
+    <div class="card" style="gap: 10px; padding: 14px 16px">
+      <div class="say" id="sayBox">
+        <span class="bubble"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9z"/><path d="M16.5 8.5a5 5 0 0 1 0 7"/></svg></span>
+        <div><b id="sayText">Tap one of the markers on screen.</b><span class="small" id="sayNext">That teaches me its color.</span></div>
+      </div>
+      <div class="row" style="gap: 10px"><span class="label" style="font-size: 11px">Beeps</span><div class="meter" id="meter"></div></div>
+    </div>
+    <div class="grid3">
+      <div class="tile"><span class="label" style="font-size: 11px">Sideways</span><b id="tH">–</b><small id="tHs">&nbsp;</small></div>
+      <div class="tile"><span class="label" style="font-size: 11px">Up / down</span><b id="tV">–</b><small id="tVs">&nbsp;</small></div>
+      <div class="tile"><span class="label" style="font-size: 11px">Level</span><b id="tL">–</b><small id="tLs">&nbsp;</small></div>
+    </div>
+    <div class="toolbar">
+      <button class="secondary" id="pauseBtn">Pause</button>
+      <button class="secondary" id="beepBtn" aria-pressed="true">Beeps on</button>
+      <button class="secondary" id="pickBtn">Re-pick color</button>
+      <button class="secondary" id="maskBtn" aria-pressed="false">Show what I see</button>
+    </div>
+  </section>
+
+  <!-- 6. Done -->
+  <section class="screen" id="scr-done" hidden>
+    <div class="row" style="justify-content: flex-start">
+      <span class="bigcheck"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></span>
+      <div><h1 style="font-size: 26px">Centered.</h1><p class="muted">Make a pencil mark at the top center of the frame, halfway between the markers.</p></div>
+    </div>
+    <div class="card">
+      <span class="label">Nail spot</span>
+      <p style="font-family: var(--display); font-weight: 600; font-size: 19px; line-height: 1.3" id="nailText"></p>
+      <p class="small" id="nailSub"></p>
+    </div>
+    <button class="primary" id="recheckBtn">It's hung — double-check it</button>
+    <button class="secondary" id="anotherBtn">Hang another picture</button>
+  </section>
+</main>
+
+<script>
+// ==CORE== pure helpers (no DOM), also used by tests
+function rgbToHsv(r, g, b) {
+  const max = Math.max(r, g, b), min = Math.min(r, g, b), d = max - min;
+  let h = 0;
+  if (d > 0) {
+    if (max === r) h = ((g - b) / d) % 6;
+    else if (max === g) h = (b - r) / d + 2;
+    else h = (r - g) / d + 4;
+    h *= 60; if (h < 0) h += 360;
+  }
+  return { h, s: max === 0 ? 0 : d / max, v: max / 255 };
+}
+
+// Find the two marker blobs of the chosen color in an RGBA buffer.
+// Returns { state: 'none' | 'one' | 'two', L, R, count, mask? }
+function findMarkers(data, W, H, color, buf, mask) {
+  const hTol = 16;
+  const sMin = Math.max(0.28, color.s * 0.5);
+  const vMin = Math.max(0.18, color.v * 0.4);
+  let n = 0;
+  for (let y = 0, i = 0; y < H; y++) {
+    for (let x = 0; x < W; x++, i += 4) {
+      const r = data[i], g = data[i + 1], b = data[i + 2];
+      const max = r > g ? (r > b ? r : b) : (g > b ? g : b);
+      const min = r < g ? (r < b ? r : b) : (g < b ? g : b);
+      const d = max - min;
+      if (max === 0 || d / max < sMin || max / 255 < vMin) { if (mask) mask[i + 3] = 0; continue; }
+      let h;
+      if (max === r) h = ((g - b) / d) % 6; else if (max === g) h = (b - r) / d + 2; else h = (r - g) / d + 4;
+      h *= 60; if (h < 0) h += 360;
+      let dh = Math.abs(h - color.h); if (dh > 180) dh = 360 - dh;
+      if (dh > hTol) { if (mask) mask[i + 3] = 0; continue; }
+      if (mask) { mask[i] = 255; mask[i + 1] = 0; mask[i + 2] = 200; mask[i + 3] = 170; }
+      buf.x[n] = x; buf.y[n] = y; n++;
+    }
+  }
+  const minCount = Math.max(4, Math.round(W * H * 0.00006));
+  if (n < minCount) return { state: 'none', count: n };
+  // 2-means, seeded with leftmost and rightmost points
+  let lx = Infinity, rx = -Infinity, li = 0, ri = 0;
+  for (let k = 0; k < n; k++) { if (buf.x[k] < lx) { lx = buf.x[k]; li = k; } if (buf.x[k] > rx) { rx = buf.x[k]; ri = k; } }
+  let ax = buf.x[li], ay = buf.y[li], bx = buf.x[ri], by = buf.y[ri];
+  let na = 0, nb = 0;
+  for (let it = 0; it < 8; it++) {
+    let sax = 0, say = 0, sbx = 0, sby = 0; na = 0; nb = 0;
+    for (let k = 0; k < n; k++) {
+      const x = buf.x[k], y = buf.y[k];
+      const da = (x - ax) * (x - ax) + (y - ay) * (y - ay);
+      const db = (x - bx) * (x - bx) + (y - by) * (y - by);
+      if (da <= db) { sax += x; say += y; na++; } else { sbx += x; sby += y; nb++; }
+    }
+    if (na) { ax = sax / na; ay = say / na; }
+    if (nb) { bx = sbx / nb; by = sby / nb; }
+  }
+  const sep = Math.hypot(bx - ax, by - ay);
+  const minEach = Math.max(3, Math.round(minCount / 2));
+  if (na < minEach || nb < minEach || sep < W * 0.04) {
+    const cx = na >= nb ? ax : bx, cy = na >= nb ? ay : by;
+    return { state: 'one', count: n, P: { x: cx, y: cy } };
+  }
+  let L = { x: ax, y: ay }, R = { x: bx, y: by };
+  if (L.x > R.x) { const t = L; L = R; R = t; }
+  return { state: 'two', count: n, L, R };
+}
+
+// Target position of the frame's top-center in pixels, given px-per-inch scale.
+function computeTarget(S, marks, scale) {
+  if (!scale) return null;
+  if (S.mode === 'item') {
+    if (!marks.itemL || !marks.itemR) return null;
+    const x = (marks.itemL.x + marks.itemR.x) / 2;
+    const topY = (marks.itemL.y + marks.itemR.y) / 2;
+    return { x, y: topY - (S.gap + S.h) * scale };
+  }
+  if (marks.floorY == null) return null;
+  const up = S.anchor === 'center' ? S.height + S.h / 2 : S.anchor === 'top' ? S.height : S.height + S.h;
+  let x = null;
+  if (S.side === 'between' && marks.sideL && marks.sideR) x = (marks.sideL.x + marks.sideR.x) / 2;
+  return { x, y: marks.floorY - up * scale };
+}
+
+function inchWords(n) {
+  const r = Math.round(n * 2) / 2, whole = Math.floor(r), half = r - whole >= 0.5;
+  if (whole === 0) return half ? 'half an inch' : 'a hair';
+  return whole + (half ? ' and a half inches' : whole === 1 ? ' inch' : ' inches');
+}
+function inchShort(n) {
+  const a = Math.abs(n), r = Math.round(a * 4) / 4, whole = Math.floor(r), f = r - whole;
+  const fr = f === 0.25 ? '¼' : f === 0.5 ? '½' : f === 0.75 ? '¾' : '';
+  return (whole > 0 || !fr ? String(whole) : '') + fr + ' in';
+}
+
+// Which correction to give next, and what to say.
+// dx > 0 means move right, dy > 0 means move down, tilt > 0 means the right side is low.
+function guidance(dx, dy, tilt, tol, tolDeg) {
+  const cap = (s) => s[0].toUpperCase() + s.slice(1);
+  const phrase = (dir, a) => a >= 6 ? 'Move ' + dir + ' about ' + inchWords(a) + '.'
+    : a >= 1.5 ? cap(dir) + ', about ' + inchWords(a) + '.'
+    : a >= 0.75 ? cap(dir) + ' a little.' : 'A touch ' + dir + '.';
+  const bucket = (a) => a >= 6 ? Math.round(a) : a >= 1.5 ? Math.round(a * 2) / 2 : a >= 0.75 ? 'little' : 'touch';
+  if (dx != null && Math.abs(dx) > tol) {
+    const dir = dx > 0 ? 'right' : 'left', a = Math.abs(dx);
+    return { axis: 'h', err: a, key: 'h' + dir + bucket(a), text: phrase(dir, a) };
+  }
+  if (Math.abs(dy) > tol) {
+    const dir = dy > 0 ? 'down' : 'up', a = Math.abs(dy);
+    return { axis: 'v', err: a, key: 'v' + dir + bucket(a), text: phrase(dir, a) };
+  }
+  if (Math.abs(tilt) > tolDeg) {
+    const side = tilt > 0 ? 'right' : 'left', a = Math.abs(tilt);
+    return { axis: 'l', err: a / 2, key: 'l' + side + (a > 2 ? 'big' : 'small'), text: a > 2 ? 'Raise the ' + side + ' side.' : 'Raise the ' + side + ' side a touch.' };
+  }
+  return { axis: 'ok', err: 0, key: 'ok', text: 'Perfect. Hold still.' };
+}
+// ==/CORE==
+
+(function () {
+  const $ = (s) => document.querySelector(s);
+  const TOL_IN = 0.5, TOL_DEG = 0.75, HOLD_MS = 1300;
+
+  // ---------- settings ----------
+  const DEFAULTS = { w: 24, h: 18, hanger: 'wire', drop: 3.5, rings: 12, mode: 'item', gap: 8, height: 57, anchor: 'center', side: 'none', voice: true, beeps: true };
+  let S = Object.assign({}, DEFAULTS);
+  try { Object.assign(S, JSON.parse(localStorage.getItem('plumb.settings') || '{}')); } catch (e) {}
+  const save = () => { try { localStorage.setItem('plumb.settings', JSON.stringify(S)); } catch (e) {} };
+  let color = null;
+  try { color = JSON.parse(localStorage.getItem('plumb.color') || 'null'); } catch (e) {}
+  const marks = { itemL: null, itemR: null, floorY: null, sideL: null, sideR: null };
+
+  // ---------- screens ----------
+  const ORDER = ['setup', 'picture', 'mode', 'target', 'live', 'done'];
+  const STAGE_ON = { setup: true, item: true, height: true, live: true, done: true };
+  let screen = 'setup', cameraOn = false;
+  function show(name) {
+    screen = name;
+    document.querySelectorAll('.screen[id^="scr-"]').forEach((el) => { el.hidden = el.id !== 'scr-' + name; });
+    $('#stageWrap').hidden = !(cameraOn && STAGE_ON[name]);
+    $('#backBtn').hidden = name === 'setup';
+    $('#brand').hidden = name !== 'setup';
+    const chip = $('#modeChip');
+    chip.hidden = !(name === 'live' || name === 'done');
+    chip.textContent = S.mode === 'item' ? 'Over item · ' + S.gap + ' in gap' : S.height + ' in to ' + S.anchor;
+    $('#voiceBtn').hidden = !(name === 'live' || name === 'done');
+    if (name === 'live') { lock.hold = null; lock.done = false; lastKey = ''; }
+    resizeStage();
+    refreshTexts();
+  }
+  function back() {
+    const map = { picture: 'setup', mode: 'picture', item: 'mode', height: 'mode', live: S.mode === 'item' ? 'item' : 'height', done: 'live' };
+    if (map[screen]) show(map[screen]);
+  }
+  $('#backBtn').onclick = back;
+
+  // ---------- picture screen ----------
+  const inW = $('#inW'), inH = $('#inH'), inDrop = $('#inDrop'), inRings = $('#inRings');
+  inW.value = S.w; inH.value = S.h; inDrop.value = S.drop; inRings.value = S.rings;
+  const num = (el, def) => { const v = parseFloat(el.value); return isFinite(v) && v >= 0 ? v : def; };
+  [inW, inH, inDrop, inRings].forEach((el) => el.addEventListener('input', () => {
+    S.w = Math.max(2, num(inW, S.w)); S.h = Math.max(2, num(inH, S.h)); S.drop = num(inDrop, S.drop); S.rings = num(inRings, S.rings); save();
+  }));
+  function segment(sel, key, after) {
+    const root = $(sel);
+    const paint = () => root.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.v === S[key])));
+    root.addEventListener('click', (e) => { const b = e.target.closest('button'); if (!b) return; S[key] = b.dataset.v; save(); paint(); if (after) after(); });
+    paint();
+  }
+  const HINTS = {
+    wire: 'Pull the wire straight up until it’s tight, then measure from the top of the frame to the wire.',
+    saw: 'Measure from the top of the frame to the middle tooth of the hanger.',
+    rings: 'Measure from the top of the frame to the top of a ring, and the distance between the rings.'
+  };
+  function refreshHanger() {
+    $('#hangerHint').textContent = HINTS[S.hanger];
+    $('#dropLabel').textContent = S.hanger === 'rings' ? 'Top of frame to rings' : 'Top of frame to hanger';
+    $('#ringField').style.visibility = S.hanger === 'rings' ? 'visible' : 'hidden';
+  }
+  segment('#segHanger', 'hanger', refreshHanger); refreshHanger();
+  $('#pictureNext').onclick = () => show('mode');
+
+  // ---------- mode screen ----------
+  const paintMode = () => document.querySelectorAll('[data-mode]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.mode === S.mode)));
+  document.querySelectorAll('[data-mode]').forEach((b) => b.onclick = () => { S.mode = b.dataset.mode; save(); paintMode(); });
+  paintMode();
+  $('#modeNext').onclick = () => show(S.mode === 'item' ? 'item' : 'height');
+
+  // ---------- steppers ----------
+  const LIMITS = { gap: [1, 24], height: [24, 90] };
+  document.querySelectorAll('[data-step]').forEach((b) => b.onclick = () => {
+    const k = b.dataset.step, [lo, hi] = LIMITS[k];
+    S[k] = Math.min(hi, Math.max(lo, S[k] + Number(b.dataset.d))); save(); refreshTexts();
+  });
+  segment('#segAnchor', 'anchor', refreshTexts);
+  segment('#segSide', 'side', () => { marks.sideL = marks.sideR = null; refreshTexts(); });
+  $('#itemRedo').onclick = () => { marks.itemL = marks.itemR = null; refreshTexts(); };
+  $('#heightRedo').onclick = () => { marks.floorY = null; marks.sideL = marks.sideR = null; refreshTexts(); };
+  $('#itemNext').onclick = () => show('live');
+  $('#heightNext').onclick = () => show('live');
+
+  function refreshTexts() {
+    $('#outGap').textContent = S.gap + ' in';
+    $('#outHeight').textContent = S.height + ' in';
+    $('#heightLabel').textContent = { center: 'Center of picture at', top: 'Top edge at', bottom: 'Bottom edge at' }[S.anchor];
+    // item steps
+    if (!marks.itemL) { $('#itemTitle').textContent = 'Tap the item’s top-left corner'; $('#itemSub').textContent = 'Tap the camera view above, at the top-left corner of the sofa, bed or dresser.'; }
+    else if (!marks.itemR) { $('#itemTitle').textContent = 'Now its top-right corner'; $('#itemSub').textContent = 'I’ll center the picture between the two.'; }
+    else { $('#itemTitle').textContent = 'Got it'; $('#itemSub').textContent = 'The green line is the item’s center. Set the gap, then pick up the picture.'; }
+    $('#itemNext').disabled = !(marks.itemL && marks.itemR);
+    // height steps
+    const needSides = S.side === 'between';
+    if (marks.floorY == null) { $('#heightTitle').textContent = 'Tap where the wall meets the floor'; $('#heightSub').textContent = 'Tap the camera view above, right below where the picture will go.'; }
+    else if (needSides && !marks.sideL) { $('#heightTitle').textContent = 'Tap the left point'; $('#heightSub').textContent = 'A wall corner, door edge or window edge. I’ll center between two points.'; }
+    else if (needSides && !marks.sideR) { $('#heightTitle').textContent = 'Now the right point'; $('#heightSub').textContent = 'I’ll center the picture halfway between them.'; }
+    else { $('#heightTitle').textContent = 'Got it'; $('#heightSub').textContent = needSides ? 'I’ll guide side to side and up and down.' : 'I’ll guide the height and level. You choose side to side.'; }
+    $('#heightNext').disabled = !(marks.floorY != null && (!needSides || (marks.sideL && marks.sideR)));
+    // done screen
+    const drop = inchShort(S.drop);
+    if (S.hanger === 'rings') {
+      $('#nailText').textContent = 'Two nails, each ' + drop + ' below the top line';
+      $('#nailSub').textContent = 'One ' + inchShort(S.rings / 2) + ' left of your mark and one ' + inchShort(S.rings / 2) + ' right of it. Use a level between them.';
+    } else {
+      $('#nailText').textContent = 'Nail goes ' + drop + ' straight below your mark';
+      $('#nailSub').textContent = S.hanger === 'wire' ? 'Wire hanger, measured pulled tight.' : 'Sawtooth hanger, measured to the middle tooth.';
+    }
+    $('#voiceBtn').setAttribute('aria-pressed', String(!S.voice));
+    $('#voiceBtn').setAttribute('aria-label', S.voice ? 'Mute voice' : 'Turn voice on');
+    $('#voiceBtn').style.color = S.voice ? 'var(--green)' : 'var(--muted)';
+    $('#beepBtn').textContent = S.beeps ? 'Beeps on' : 'Beeps off';
+    $('#beepBtn').setAttribute('aria-pressed', String(S.beeps));
+  }
+
+  // ---------- camera, sensors, audio ----------
+  const video = $('#video'), overlay = $('#overlay'), octx = overlay.getContext('2d');
+  const proc = document.createElement('canvas'), pctx = proc.getContext('2d', { willReadFrequently: true });
+  const maskCanvas = document.createElement('canvas'), mctx = maskCanvas.getContext('2d');
+  let W = 0, H = 0, buf = null, maskImg = null, lastFrame = null;
+  let audio = null, wakeLock = null;
+  const tilt = { level: null, upright: null };
+
+  async function start() {
+    $('#setupError').hidden = true;
+    try {
+      if (typeof DeviceMotionEvent !== 'undefined' && DeviceMotionEvent.requestPermission) { try { await DeviceMotionEvent.requestPermission(); } catch (e) {} }
+      try { audio = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {}
+      if ('speechSynthesis' in window) { const u = new SpeechSynthesisUtterance('Okay.'); u.volume = 0.6; speechSynthesis.speak(u); }
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } } });
+      video.srcObject = stream;
+      await video.play();
+      cameraOn = true;
+      requestWake();
+      $('#setupIntro').hidden = true; $('#setupLive').hidden = false;
+      $('#startBtn').hidden = true; $('#setupNext').hidden = false;
+      show('setup');
+      requestAnimationFrame(loop);
+    } catch (err) {
+      const e = $('#setupError');
+      e.hidden = false;
+      e.textContent = location.protocol !== 'https:' && location.hostname !== 'localhost'
+        ? 'The camera only works over https. Open this page from its GitHub Pages link.'
+        : 'I couldn’t open the camera (' + (err && err.name ? err.name : 'error') + '). Allow camera access for this site and try again.';
+    }
+  }
+  $('#startBtn').onclick = start;
+  $('#setupNext').onclick = () => show('picture');
+
+  async function requestWake() { try { if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen'); } catch (e) {} }
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && cameraOn) requestWake(); });
+
+  window.addEventListener('devicemotion', (e) => {
+    const a = e.accelerationIncludingGravity; if (!a || a.x == null) return;
+    const g = Math.hypot(a.x, a.y, a.z) || 9.81;
+    const roll = Math.abs(Math.atan2(a.x, a.y) * 180 / Math.PI);
+    tilt.level = Math.min(roll, 180 - roll);
+    tilt.upright = Math.abs(Math.asin(Math.max(-1, Math.min(1, a.z / g))) * 180 / Math.PI);
+  });
+
+  function setupChecks() {
+    const set = (id, valId, v, good) => {
+      const el = $(id);
+      el.className = 'check' + (v == null ? '' : v <= good ? ' ok' : ' warn');
+      $(valId).textContent = v == null ? 'no sensor' : v.toFixed(1) + '°';
+    };
+    set('#chkLevel', '#valLevel', tilt.level, 1.5);
+    set('#chkUpright', '#valUpright', tilt.upright, 4);
+  }
+
+  function resizeStage() {
+    if (!video.videoWidth) return;
+    const ar = video.videoWidth / video.videoHeight;
+    const maxW = $('main').clientWidth - 32;
+    const maxH = Math.max(220, window.innerHeight * (screen === 'live' ? 0.5 : 0.42));
+    let w = Math.min(maxW, maxH * ar); let h = w / ar;
+    const st = $('#stage'); st.style.width = w + 'px'; st.style.height = h + 'px';
+    const dpr = window.devicePixelRatio || 1;
+    overlay.width = Math.round(w * dpr); overlay.height = Math.round(h * dpr);
+    const k = Math.sqrt(90000 / (video.videoWidth * video.videoHeight));
+    const nW = Math.round(video.videoWidth * k), nH = Math.round(video.videoHeight * k);
+    if (nW !== W || nH !== H) {
+      W = nW; H = nH; proc.width = W; proc.height = H; maskCanvas.width = W; maskCanvas.height = H;
+      buf = { x: new Float32Array(W * H), y: new Float32Array(W * H) };
+      maskImg = mctx.createImageData(W, H);
+      marks.itemL = marks.itemR = null; marks.floorY = null; marks.sideL = marks.sideR = null;
+      refreshTexts();
+    }
+  }
+  window.addEventListener('resize', resizeStage);
+  video.addEventListener('loadedmetadata', resizeStage);
+
+  function beep(freq, ms, vol) {
+    if (!audio || !S.beeps) return;
+    if (audio.state === 'suspended') audio.resume();
+    const t = audio.currentTime, o = audio.createOscillator(), g = audio.createGain();
+    o.type = 'sine'; o.frequency.value = freq;
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vol || 0.25, t + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + ms / 1000);
+    o.connect(g); g.connect(audio.destination); o.start(t); o.stop(t + ms / 1000 + 0.02);
+  }
+  let lastSpoke = 0;
+  function say(text, force) {
+    if (!S.voice || !('speechSynthesis' in window)) return;
+    if (force) speechSynthesis.cancel();
+    else if (speechSynthesis.speaking) return;
+    const u = new SpeechSynthesisUtterance(text); u.rate = 1.05;
+    speechSynthesis.speak(u); lastSpoke = performance.now();
+  }
+  $('#voiceBtn').onclick = () => { S.voice = !S.voice; save(); if (!S.voice && 'speechSynthesis' in window) speechSynthesis.cancel(); refreshTexts(); };
+  $('#beepBtn').onclick = () => { S.beeps = !S.beeps; save(); refreshTexts(); };
+
+  // ---------- taps on the camera view ----------
+  let picking = !color, paused = false, showMask = false;
+  overlay.addEventListener('pointerdown', (e) => {
+    if (!W) return;
+    const r = overlay.getBoundingClientRect();
+    const p = { x: (e.clientX - r.left) / r.width * W, y: (e.clientY - r.top) / r.height * H };
+    if (screen === 'item') {
+      if (!marks.itemL) marks.itemL = p; else if (!marks.itemR) marks.itemR = p; else { marks.itemL = p; marks.itemR = null; }
+      if (marks.itemL && marks.itemR && marks.itemL.x > marks.itemR.x) { const t = marks.itemL; marks.itemL = marks.itemR; marks.itemR = t; }
+      refreshTexts();
+    } else if (screen === 'height') {
+      if (marks.floorY == null) marks.floorY = p.y;
+      else if (S.side === 'between' && !marks.sideL) marks.sideL = p;
+      else if (S.side === 'between' && !marks.sideR) marks.sideR = p;
+      else { marks.floorY = p.y; marks.sideL = marks.sideR = null; }
+      if (marks.sideL && marks.sideR && marks.sideL.x > marks.sideR.x) { const t = marks.sideL; marks.sideL = marks.sideR; marks.sideR = t; }
+      refreshTexts();
+    } else if (screen === 'live' && picking && lastFrame) {
+      let r0 = 0, g0 = 0, b0 = 0, c = 0;
+      for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
+        const x = Math.round(p.x) + dx, y = Math.round(p.y) + dy; if (x < 0 || y < 0 || x >= W || y >= H) continue;
+        const i = (y * W + x) * 4; r0 += lastFrame[i]; g0 += lastFrame[i + 1]; b0 += lastFrame[i + 2]; c++;
+      }
+      const hsv = rgbToHsv(r0 / c, g0 / c, b0 / c);
+      if (hsv.s < 0.28 || hsv.v < 0.18) { setSay('That spot isn’t colorful enough.', 'Tap right on a bright marker.', false); return; }
+      color = hsv; picking = false;
+      try { localStorage.setItem('plumb.color', JSON.stringify(color)); } catch (e2) {}
+      say('Got the color.', true);
+    }
+  });
+  $('#pickBtn').onclick = () => { picking = true; };
+  $('#pauseBtn').onclick = () => { paused = !paused; $('#pauseBtn').textContent = paused ? 'Resume' : 'Pause'; if (paused && 'speechSynthesis' in window) speechSynthesis.cancel(); };
+  $('#maskBtn').onclick = () => { showMask = !showMask; $('#maskBtn').setAttribute('aria-pressed', String(showMask)); $('#maskBtn').textContent = showMask ? 'Hide what I see' : 'Show what I see'; };
+  $('#recheckBtn').onclick = () => show('live');
+  $('#anotherBtn').onclick = () => { marks.itemL = marks.itemR = null; marks.floorY = null; marks.sideL = marks.sideR = null; show('picture'); };
+
+  // ---------- tracking + guidance loop ----------
+  const track = { L: null, R: null, scale: null, state: 'none', lostSince: 0, lastSeen: 0 };
+  const lock = { hold: null, done: false };
+  let lastKey = '', lastProc = 0, nextBeep = 0, beepMs = 0, lastLostSay = 0;
+
+  function smooth(prev, next, a) { return prev ? { x: prev.x + (next.x - prev.x) * a, y: prev.y + (next.y - prev.y) * a } : next; }
+
+  function loop(now) {
+    requestAnimationFrame(loop);
+    if (!cameraOn || !W || video.readyState < 2) return;
+    if (screen === 'setup') setupChecks();
+    if (now - lastProc < 50) { return; }
+    lastProc = now;
+    pctx.drawImage(video, 0, 0, W, H);
+    const img = pctx.getImageData(0, 0, W, H);
+    lastFrame = img.data;
+
+    let res = { state: 'none' };
+    if (color && (screen === 'live' || screen === 'done')) res = findMarkers(img.data, W, H, color, buf, showMask ? maskImg.data : null);
+    if (res.state === 'two') {
+      track.L = smooth(track.L, res.L, 0.4); track.R = smooth(track.R, res.R, 0.4);
+      const s = Math.hypot(track.R.x - track.L.x, track.R.y - track.L.y) / S.w;
+      track.scale = track.scale ? track.scale + (s - track.scale) * 0.3 : s;
+      track.state = 'two'; track.lastSeen = now;
+    } else {
+      track.state = res.state;
+      if (now - track.lastSeen > 400) { track.L = track.R = null; }
+    }
+
+    let g = null, dx = null, dy = null, tiltDeg = null, target = null;
+    if (screen === 'live' && !paused) {
+      if (picking) {
+        setSay('Tap one of the markers on screen.', 'That teaches me its color.', false);
+        nextBeep = 0;
+      } else if (track.L && track.R) {
+        target = computeTarget(S, marks, track.scale);
+        const mid = { x: (track.L.x + track.R.x) / 2, y: (track.L.y + track.R.y) / 2 };
+        tiltDeg = Math.atan2(track.R.y - track.L.y, track.R.x - track.L.x) * 180 / Math.PI;
+        dx = target && target.x != null ? (target.x - mid.x) / track.scale : null;
+        dy = target ? (target.y - mid.y) / track.scale : 0;
+        g = guidance(dx, dy, tiltDeg, TOL_IN, TOL_DEG);
+        handleGuidance(g, now);
+      } else {
+        lock.hold = null;
+        const msg = track.state === 'one' ? ['I can only see one marker.', 'Move so both top corners are in view.'] : ['I can’t see the markers.', 'Hold the picture up. Keep your head below the frame.'];
+        setSay(msg[0], msg[1], false);
+        if (now - track.lastSeen > 1500 && now - lastLostSay > 5000) { say(msg[0]); lastLostSay = now; }
+        nextBeep = 0;
+      }
+      paintTiles(dx, dy, tiltDeg, g);
+      // beeps: faster as you get closer, silent while talking
+      if (g && S.beeps && now >= nextBeep && !(S.voice && 'speechSynthesis' in window && speechSynthesis.speaking)) {
+        if (g.axis === 'ok') { beep(1320, 90, 0.3); nextBeep = now + 140; }
+        else { beepMs = 160 + Math.min(g.err, 8) * 110; beep(g.axis === 'l' ? 660 : 880, 60); nextBeep = now + beepMs; }
+      }
+    }
+    draw(res, target, g);
+  }
+
+  function handleGuidance(g, now) {
+    if (g.axis === 'ok') {
+      if (!lock.hold) { lock.hold = now; say(g.text, true); lastKey = g.key; }
+      setSay(g.text, 'Within ½ in. Keep it there…', true);
+      if (!lock.done && now - lock.hold > HOLD_MS) {
+        lock.done = true;
+        beep(1320, 500, 0.35);
+        say('Got it. Make a pencil mark at the top center of the frame.', true);
+        show('done');
+      }
+      return;
+    }
+    lock.hold = null;
+    const changed = g.key !== lastKey;
+    const gapMs = g.err < 1 ? 4000 : 2600;
+    if ((changed && now - lastSpoke > 900) || now - lastSpoke > gapMs) { say(g.text, changed && g.err >= 1); lastKey = g.key; }
+    const order = g.axis === 'h' ? 'Then up/down, then level.' : g.axis === 'v' ? 'Side to side is on.' : 'Position is on. Just level it.';
+    setSay('“' + g.text + '”', order, false);
+  }
+
+  let lastSayText = '';
+  function setSay(text, sub, ok) {
+    if (text + sub + ok === lastSayText) return; lastSayText = text + sub + ok;
+    $('#sayText').textContent = text; $('#sayNext').textContent = sub;
+    $('#sayBox').classList.toggle('ok', !!ok);
+  }
+
+  const meter = $('#meter');
+  for (let i = 0; i < 10; i++) { const b = document.createElement('i'); b.style.height = (8 + i * 2) + 'px'; meter.appendChild(b); }
+  function paintTiles(dx, dy, tiltDeg, g) {
+    const tile = (id, val, sub, good) => { const el = $(id); el.textContent = val; el.className = val === '–' ? '' : good ? 'green' : 'amber'; $(id + 's').textContent = sub; };
+    if (dy == null) { tile('#tH', '–', ' '); tile('#tV', '–', ' '); tile('#tL', '–', ' '); }
+    else {
+      if (dx == null) tile('#tH', '–', 'your call', true);
+      else tile('#tH', Math.abs(dx) <= TOL_IN ? 'On' : inchShort(dx), Math.abs(dx) <= TOL_IN ? 'centered' : dx > 0 ? 'move right' : 'move left', Math.abs(dx) <= TOL_IN);
+      tile('#tV', Math.abs(dy) <= TOL_IN ? 'On' : inchShort(dy), Math.abs(dy) <= TOL_IN ? 'on height' : dy > 0 ? 'move down' : 'move up', Math.abs(dy) <= TOL_IN);
+      tile('#tL', Math.abs(tiltDeg).toFixed(1) + '°', Math.abs(tiltDeg) <= TOL_DEG ? 'level' : tiltDeg > 0 ? 'raise right' : 'raise left', Math.abs(tiltDeg) <= TOL_DEG);
+    }
+    const filled = !g ? 0 : g.axis === 'ok' ? 10 : Math.max(1, Math.round(10 - Math.min(g.err, 9)));
+    const col = g && g.axis === 'ok' ? 'var(--green)' : 'var(--amber)';
+    meter.querySelectorAll('i').forEach((b, i) => { b.style.background = i < filled ? col : 'var(--line)'; });
+  }
+
+  // ---------- overlay drawing ----------
+  function draw(res, target, g) {
+    const k = overlay.width / W, dpr = window.devicePixelRatio || 1;
+    octx.clearRect(0, 0, overlay.width, overlay.height);
+    octx.fillStyle = 'rgba(14,16,20,0.28)'; octx.fillRect(0, 0, overlay.width, overlay.height);
+    if (showMask && maskImg && (screen === 'live' || screen === 'done')) { mctx.putImageData(maskImg, 0, 0); octx.imageSmoothingEnabled = false; octx.drawImage(maskCanvas, 0, 0, overlay.width, overlay.height); }
+    const GREEN = '#39E58C', AMBER = '#FFB020';
+    const P = (p) => [p.x * k, p.y * k];
+    octx.lineWidth = 2 * dpr;
+    const dashed = (on) => octx.setLineDash(on ? [6 * dpr, 6 * dpr] : []);
+    const dot = (p, r, c) => { octx.beginPath(); octx.arc(p.x * k, p.y * k, r * dpr, 0, Math.PI * 2); octx.fillStyle = c; octx.fill(); };
+    const line = (a, b, c, d) => { octx.strokeStyle = c; dashed(d); octx.beginPath(); octx.moveTo(a[0], a[1]); octx.lineTo(b[0], b[1]); octx.stroke(); };
+    const label = (text, x, y, bg, fg) => {
+      octx.font = '600 ' + 12 * dpr + 'px Inter, sans-serif'; const w = octx.measureText(text).width + 14 * dpr, h = 22 * dpr;
+      octx.fillStyle = bg; octx.beginPath(); octx.roundRect ? octx.roundRect(x, y, w, h, h / 2) : octx.rect(x, y, w, h); octx.fill();
+      octx.fillStyle = fg; octx.textBaseline = 'middle'; octx.fillText(text, x + 7 * dpr, y + h / 2);
+    };
+    // marks
+    if (marks.itemL) dot(marks.itemL, 7, GREEN);
+    if (marks.itemR) dot(marks.itemR, 7, GREEN);
+    if (marks.itemL && marks.itemR) {
+      line(P(marks.itemL), P(marks.itemR), GREEN, false);
+      const cx = (marks.itemL.x + marks.itemR.x) / 2 * k, cy = (marks.itemL.y + marks.itemR.y) / 2 * k;
+      line([cx, cy], [cx, 0], 'rgba(57,229,140,0.7)', true);
+      if (screen === 'item') label('Center', cx + 6 * dpr, 8 * dpr, GREEN, '#0E1014');
+    }
+    if (marks.floorY != null) { line([0, marks.floorY * k], [overlay.width, marks.floorY * k], GREEN, true); label('Floor', 8 * dpr, marks.floorY * k - 28 * dpr, '#0E1014', GREEN); }
+    if (marks.sideL) dot(marks.sideL, 7, GREEN);
+    if (marks.sideR) dot(marks.sideR, 7, GREEN);
+    if (marks.sideL && marks.sideR) { const cx = (marks.sideL.x + marks.sideR.x) / 2 * k; line([cx, 0], [cx, overlay.height], 'rgba(57,229,140,0.6)', true); }
+    // target frame
+    const sc = track.scale;
+    if (target && sc && (screen === 'live' || screen === 'done')) {
+      const tx = target.x != null ? target.x : (track.L && track.R ? (track.L.x + track.R.x) / 2 : W / 2);
+      if (target.x == null) line([0, target.y * k], [overlay.width, target.y * k], 'rgba(57,229,140,0.6)', true);
+      octx.strokeStyle = GREEN; dashed(true);
+      octx.strokeRect((tx - S.w * sc / 2) * k, target.y * k, S.w * sc * k, S.h * sc * k);
+      dashed(false);
+    }
+    // current frame from markers
+    if (track.L && track.R && (screen === 'live' || screen === 'done')) {
+      const c = g && g.axis === 'ok' || screen === 'done' ? GREEN : AMBER;
+      const ux = track.R.x - track.L.x, uy = track.R.y - track.L.y, len = Math.hypot(ux, uy) || 1;
+      const hpx = S.h * (sc || len / S.w);
+      const px = -uy / len * hpx, py = ux / len * hpx;
+      octx.strokeStyle = c; dashed(false); octx.lineWidth = 3 * dpr;
+      octx.beginPath(); octx.moveTo(track.L.x * k, track.L.y * k); octx.lineTo(track.R.x * k, track.R.y * k);
+      octx.lineTo((track.R.x + px) * k, (track.R.y + py) * k); octx.lineTo((track.L.x + px) * k, (track.L.y + py) * k); octx.closePath(); octx.stroke();
+      octx.lineWidth = 2 * dpr;
+      dot(track.L, 6, c); dot(track.R, 6, c);
+      const mid = { x: (track.L.x + track.R.x) / 2, y: (track.L.y + track.R.y) / 2 };
+      dot(mid, 4, c);
+      if (target && g && g.axis !== 'ok') {
+        const tx = target.x != null ? target.x : mid.x;
+        line([mid.x * k, mid.y * k], [tx * k, target.y * k], AMBER, false);
+        dot({ x: tx, y: target.y }, 5, GREEN);
+      }
+    } else if (res.state === 'one' && res.P) dot(res.P, 6, AMBER);
+    // status tag
+    const tag = $('#stageTag');
+    if (screen === 'live' || screen === 'done') {
+      tag.className = track.L ? 'on' : 'lost';
+      $('#stageTagText').textContent = picking ? 'Tap a marker' : paused ? 'Paused' : track.L ? 'Tracking' : 'Looking for markers';
+    } else { tag.className = 'on'; $('#stageTagText').textContent = screen === 'setup' ? 'Camera' : 'Tap to mark'; }
+  }
+
+  show('setup');
+})();
+</script>
+</body>
+</html>
