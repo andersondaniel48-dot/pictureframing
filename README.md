@@ -12,11 +12,12 @@ Plumb is a single-page web app. You prop your phone up facing the wall, hold the
 4. Choose what to line it up with:
    - **Center over an item:** tap the top-left and top-right corners of the sofa, bed or dresser, then set the gap above it.
    - **At a height:** tap where the wall meets the floor, then set the height (57 in to center by default) and whether it's measured to the picture's center, top or bottom. You can also tap two points (wall corners, a door edge) to center between them.
-5. Pick up the picture and tap one of the markers on screen so the app learns its color. Then follow the voice.
+5. Tap **Pick it up — I'll guide you**, walk to the wall and hold the picture up. You don't need to touch the phone again: it finds the two markers by itself ("Found your markers") and starts talking. If it has trouble, pick the marker color on the picture screen (pink, green, orange, blue or yellow).
 6. When it says "Got it", make a pencil mark at the top center of the frame. The app tells you how far below that mark the nail (or two nails, for D-rings) goes.
 
 ## How it works
 
+- **Hands-free marker finding:** while you set up, the app saves a frame of the empty wall. When you hold the picture up, it looks for a pair of matching, similar-sized, roughly level bright spots in places that were plain wall before, so a colorful pillow or lamp already in view is ignored. Once it sees the same pair a few times in a row, it locks onto that color.
 - **Tracking:** each camera frame is shrunk to about 90k pixels and checked for the marker's color (in HSV). The matching pixels are split into two clusters, which gives the two top corners of the frame. Their midpoint is the frame's top center, and the angle between them is the tilt.
 - **Scale:** the pixel distance between the markers divided by the frame width gives pixels per inch. Since the frame is flat against the wall, that same scale measures the gap above the sofa or the height from the floor.
 - **Guidance:** it gives one correction at a time, in order: side to side, then up and down, then level. Left and right are from your side, since you and the back camera face the same way. You're "on" within ½ in and 0.75°, and it locks after you hold still for about 1.3 s.
@@ -28,7 +29,7 @@ Everything runs on the phone. No video leaves the device.
 
 - Put the phone at roughly the height the picture will hang, and hold the frame by its sides or bottom so your head doesn't block the markers.
 - The more square the phone is to the wall, the more accurate the measurements.
-- If tracking jumps around, tap **Show what I see** to check which pixels match the marker color, and tap **Re-pick color** if needed.
+- If tracking jumps around, tap **Show what I see** to check which pixels match the marker color, and tap **Find markers again** or choose the marker color by hand. You can also tap a marker on screen to teach the exact color.
 
 ## Running locally
 

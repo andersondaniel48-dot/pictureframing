@@ -86,6 +86,7 @@
   .bigcheck { width: 56px; height: 56px; border-radius: 28px; background: var(--green); color: var(--bg); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
   .note { background: rgba(255,176,32,0.12); border: 1px solid rgba(255,176,32,0.4); color: #FFD27A; border-radius: 12px; padding: 10px 12px; font-size: 13px; line-height: 1.45; }
   .note[hidden] { display: none; }
+  .sw { width: 12px; height: 12px; border-radius: 6px; display: inline-block; margin-right: 6px; vertical-align: -1px; }
 </style>
 </head>
 <body>
@@ -163,6 +164,18 @@
         <label class="field" id="ringField">Ring to ring<span class="inbox"><input id="inRings" type="number" inputmode="decimal" step="0.25" min="0"><span>in</span></span></label>
       </div>
     </div>
+    <div class="card">
+      <span class="label">Marker color</span>
+      <div class="seg" id="segMarker" style="grid-template-columns: repeat(3, minmax(0, 1fr))">
+        <button data-v="auto">Auto-find</button>
+        <button data-v="pink"><i class="sw" style="background: #FF3DA8"></i>Pink</button>
+        <button data-v="green"><i class="sw" style="background: #5BE34A"></i>Green</button>
+        <button data-v="orange"><i class="sw" style="background: #FF7A1A"></i>Orange</button>
+        <button data-v="blue"><i class="sw" style="background: #2E9BFF"></i>Blue</button>
+        <button data-v="yellow"><i class="sw" style="background: #FFE14D"></i>Yellow</button>
+      </div>
+      <p class="small" id="markerHint"></p>
+    </div>
     <button class="primary" id="pictureNext">Continue</button>
   </section>
 
@@ -216,7 +229,7 @@
     <div class="card" style="gap: 10px; padding: 14px 16px">
       <div class="say" id="sayBox">
         <span class="bubble"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9z"/><path d="M16.5 8.5a5 5 0 0 1 0 7"/></svg></span>
-        <div><b id="sayText">Tap one of the markers on screen.</b><span class="small" id="sayNext">That teaches me its color.</span></div>
+        <div><b id="sayText">Pick up the picture and hold it on the wall.</b><span class="small" id="sayNext">I'll find your two markers.</span></div>
       </div>
       <div class="row" style="gap: 10px"><span class="label" style="font-size: 11px">Beeps</span><div class="meter" id="meter"></div></div>
     </div>
@@ -228,7 +241,7 @@
     <div class="toolbar">
       <button class="secondary" id="pauseBtn">Pause</button>
       <button class="secondary" id="beepBtn" aria-pressed="true">Beeps on</button>
-      <button class="secondary" id="pickBtn">Re-pick color</button>
+      <button class="secondary" id="pickBtn">Find markers again</button>
       <button class="secondary" id="maskBtn" aria-pressed="false">Show what I see</button>
     </div>
   </section>
@@ -265,8 +278,8 @@ function rgbToHsv(r, g, b) {
 
 // Find the two marker blobs of the chosen color in an RGBA buffer.
 // Returns { state: 'none' | 'one' | 'two', L, R, count, mask? }
-function findMarkers(data, W, H, color, buf, mask) {
-  const hTol = 16;
+function findMarkers(data, W, H, color, buf, mask, bgData) {
+  const hTol = color.tol || 16;
   const sMin = Math.max(0.28, color.s * 0.5);
   const vMin = Math.max(0.18, color.v * 0.4);
   let n = 0;
@@ -282,6 +295,7 @@ function findMarkers(data, W, H, color, buf, mask) {
       h *= 60; if (h < 0) h += 360;
       let dh = Math.abs(h - color.h); if (dh > 180) dh = 360 - dh;
       if (dh > hTol) { if (mask) mask[i + 3] = 0; continue; }
+      if (bgData && matchesHue(bgData, i, color.h, hTol, sMin, vMin)) { if (mask) mask[i + 3] = 0; continue; }
       if (mask) { mask[i] = 255; mask[i + 1] = 0; mask[i + 2] = 200; mask[i + 3] = 170; }
       buf.x[n] = x; buf.y[n] = y; n++;
     }
@@ -312,7 +326,69 @@ function findMarkers(data, W, H, color, buf, mask) {
   }
   let L = { x: ax, y: ay }, R = { x: bx, y: by };
   if (L.x > R.x) { const t = L; L = R; R = t; }
-  return { state: 'two', count: n, L, R };
+  return { state: 'two', count: n, na, nb, L, R };
+}
+
+function matchesHue(data, i, h0, hTol, sMin, vMin) {
+  const c = rgbToHsv(data[i], data[i + 1], data[i + 2]);
+  if (c.s < sMin || c.v < vMin) return false;
+  let dh = Math.abs(c.h - h0); if (dh > 180) dh = 360 - dh;
+  return dh <= hTol;
+}
+
+// Preset marker colors (hue in degrees) for people who pick one ahead of time.
+const PRESETS = {
+  pink: { h: 328, s: 0.5, v: 0.4, tol: 22 },
+  green: { h: 105, s: 0.5, v: 0.4, tol: 28 },
+  orange: { h: 24, s: 0.5, v: 0.4, tol: 14 },
+  blue: { h: 208, s: 0.5, v: 0.4, tol: 22 },
+  yellow: { h: 54, s: 0.5, v: 0.4, tol: 12 }
+};
+
+// Fraction of the frame's pixels that are vivid, in 36 hue bins of 10 degrees.
+function hueHistogram(data, W, H, bgData) {
+  const hist = new Float32Array(36);
+  for (let i = 0; i < data.length; i += 4) {
+    const r = data[i], g = data[i + 1], b = data[i + 2];
+    const max = r > g ? (r > b ? r : b) : (g > b ? g : b);
+    const min = r < g ? (r < b ? r : b) : (g < b ? g : b);
+    const d = max - min;
+    if (max < 77 || d / max < 0.45) continue;
+    if (bgData) { const c = rgbToHsv(bgData[i], bgData[i + 1], bgData[i + 2]); if (c.v >= 0.3 && c.s >= 0.35) continue; }
+    let h;
+    if (max === r) h = ((g - b) / d) % 6; else if (max === g) h = (b - r) / d + 2; else h = (r - g) / d + 4;
+    h *= 60; if (h < 0) h += 360;
+    hist[Math.floor(h / 10) % 36]++;
+  }
+  for (let k = 0; k < 36; k++) hist[k] /= W * H;
+  return hist;
+}
+
+// Hands-free: look for a pair of same-colored, similar-sized, roughly level blobs
+// in spots that were plain on the empty wall (bgData = a frame of the empty wall).
+function autoFind(data, W, H, bgData, buf) {
+  const hist = hueHistogram(data, W, H, bgData);
+  const minFrac = Math.max(8, W * H * 0.00012) / (W * H);
+  const cands = [];
+  for (let b = 0; b < 36; b++) {
+    const v = hist[b];
+    if (v > minFrac) cands.push({ b, v });
+  }
+  cands.sort((p, q) => q.v - p.v);
+  let best = null;
+  for (const c of cands.slice(0, 5)) {
+    const color = { h: c.b * 10 + 5, s: 0.45, v: 0.3, tol: 12 };
+    const r = findMarkers(data, W, H, color, buf, null, bgData);
+    if (r.state !== 'two') continue;
+    const sep = Math.hypot(r.R.x - r.L.x, r.R.y - r.L.y);
+    if (sep < W * 0.08) continue;
+    if (Math.abs(r.R.y - r.L.y) > sep * 0.3) continue;
+    const ratio = r.na / r.nb;
+    if (ratio < 0.33 || ratio > 3) continue;
+    const score = Math.min(r.na, r.nb);
+    if (!best || score > best.score) best = { bin: c.b, color, res: r, score };
+  }
+  return best;
 }
 
 // Target position of the frame's top-center in pixels, given px-per-inch scale.
@@ -371,12 +447,15 @@ function guidance(dx, dy, tilt, tol, tolDeg) {
   const TOL_IN = 0.5, TOL_DEG = 0.75, HOLD_MS = 1300;
 
   // ---------- settings ----------
-  const DEFAULTS = { w: 24, h: 18, hanger: 'wire', drop: 3.5, rings: 12, mode: 'item', gap: 8, height: 57, anchor: 'center', side: 'none', voice: true, beeps: true };
+  const DEFAULTS = { w: 24, h: 18, hanger: 'wire', drop: 3.5, rings: 12, mode: 'item', gap: 8, height: 57, anchor: 'center', side: 'none', voice: true, beeps: true, marker: 'auto' };
   let S = Object.assign({}, DEFAULTS);
   try { Object.assign(S, JSON.parse(localStorage.getItem('plumb.settings') || '{}')); } catch (e) {}
   const save = () => { try { localStorage.setItem('plumb.settings', JSON.stringify(S)); } catch (e) {} };
-  let color = null;
-  try { color = JSON.parse(localStorage.getItem('plumb.color') || 'null'); } catch (e) {}
+  // color = the marker color being tracked; null while auto-find is still looking
+  const presetColor = () => (PRESETS[S.marker] ? Object.assign({}, PRESETS[S.marker]) : null);
+  let color = presetColor();
+  let bgFrame = null, lastBgAt = 0;
+  const autoState = { bin: -1, hits: 0, frame: 0 };
   const marks = { itemL: null, itemR: null, floorY: null, sideL: null, sideR: null };
 
   // ---------- screens ----------
@@ -427,6 +506,13 @@ function guidance(dx, dy, tilt, tol, tolDeg) {
     $('#ringField').style.visibility = S.hanger === 'rings' ? 'visible' : 'hidden';
   }
   segment('#segHanger', 'hanger', refreshHanger); refreshHanger();
+  function resetMarkers() { color = presetColor(); autoState.bin = -1; autoState.hits = 0; }
+  function refreshMarkerHint() {
+    $('#markerHint').textContent = S.marker === 'auto'
+      ? 'I’ll find two matching bright markers on my own when you hold the picture up. If I struggle, pick their color here.'
+      : 'I’ll only look for ' + S.marker + '. Make sure nothing else that color is on the wall.';
+  }
+  segment('#segMarker', 'marker', () => { resetMarkers(); refreshMarkerHint(); }); refreshMarkerHint();
   $('#pictureNext').onclick = () => show('mode');
 
   // ---------- mode screen ----------
@@ -577,7 +663,7 @@ function guidance(dx, dy, tilt, tol, tolDeg) {
   $('#beepBtn').onclick = () => { S.beeps = !S.beeps; save(); refreshTexts(); };
 
   // ---------- taps on the camera view ----------
-  let picking = !color, paused = false, showMask = false;
+  let paused = false, showMask = false;
   overlay.addEventListener('pointerdown', (e) => {
     if (!W) return;
     const r = overlay.getBoundingClientRect();
@@ -593,7 +679,8 @@ function guidance(dx, dy, tilt, tol, tolDeg) {
       else { marks.floorY = p.y; marks.sideL = marks.sideR = null; }
       if (marks.sideL && marks.sideR && marks.sideL.x > marks.sideR.x) { const t = marks.sideL; marks.sideL = marks.sideR; marks.sideR = t; }
       refreshTexts();
-    } else if (screen === 'live' && picking && lastFrame) {
+    } else if (screen === 'live' && lastFrame) {
+      // optional: tapping a marker teaches its exact color
       let r0 = 0, g0 = 0, b0 = 0, c = 0;
       for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
         const x = Math.round(p.x) + dx, y = Math.round(p.y) + dy; if (x < 0 || y < 0 || x >= W || y >= H) continue;
@@ -601,12 +688,11 @@ function guidance(dx, dy, tilt, tol, tolDeg) {
       }
       const hsv = rgbToHsv(r0 / c, g0 / c, b0 / c);
       if (hsv.s < 0.28 || hsv.v < 0.18) { setSay('That spot isn’t colorful enough.', 'Tap right on a bright marker.', false); return; }
-      color = hsv; picking = false;
-      try { localStorage.setItem('plumb.color', JSON.stringify(color)); } catch (e2) {}
+      color = Object.assign(hsv, { tol: 16 });
       say('Got the color.', true);
     }
   });
-  $('#pickBtn').onclick = () => { picking = true; };
+  $('#pickBtn').onclick = () => { resetMarkers(); track.L = track.R = null; track.scale = null; };
   $('#pauseBtn').onclick = () => { paused = !paused; $('#pauseBtn').textContent = paused ? 'Resume' : 'Pause'; if (paused && 'speechSynthesis' in window) speechSynthesis.cancel(); };
   $('#maskBtn').onclick = () => { showMask = !showMask; $('#maskBtn').setAttribute('aria-pressed', String(showMask)); $('#maskBtn').textContent = showMask ? 'Hide what I see' : 'Show what I see'; };
   $('#recheckBtn').onclick = () => show('live');
@@ -629,8 +715,34 @@ function guidance(dx, dy, tilt, tol, tolDeg) {
     const img = pctx.getImageData(0, 0, W, H);
     lastFrame = img.data;
 
+    // remember the empty wall, so colorful things already on it (pillows, lamps) are ignored
+    if ((screen === 'setup' || screen === 'item' || screen === 'height') && now - lastBgAt > 500) {
+      lastBgAt = now;
+      if (!bgFrame || bgFrame.length !== img.data.length) bgFrame = new Uint8ClampedArray(img.data.length);
+      bgFrame.set(img.data);
+    }
+    // hands-free marker finding: needs the same pair in several checks in a row
+    if (!color && screen === 'live' && !paused && ++autoState.frame % 3 === 0) {
+      const best = autoFind(img.data, W, H, bgFrame, buf);
+      if (best) {
+        const d = Math.abs(best.bin - autoState.bin), same = autoState.bin >= 0 && (d <= 1 || d >= 35);
+        autoState.hits = same ? autoState.hits + 1 : 1; autoState.bin = best.bin;
+        if (autoState.hits >= 4) {
+          let r0 = 0, g0 = 0, b0 = 0, c = 0;
+          [best.res.L, best.res.R].forEach((p) => {
+            for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+              const x = Math.round(p.x) + dx, y = Math.round(p.y) + dy; if (x < 0 || y < 0 || x >= W || y >= H) continue;
+              const i = (y * W + x) * 4; r0 += img.data[i]; g0 += img.data[i + 1]; b0 += img.data[i + 2]; c++;
+            }
+          });
+          const hsv = c ? rgbToHsv(r0 / c, g0 / c, b0 / c) : null;
+          color = hsv && hsv.s >= 0.35 ? Object.assign(hsv, { tol: 16 }) : best.color;
+          say('Found your markers.', true);
+        }
+      } else autoState.hits = Math.max(0, autoState.hits - 1);
+    }
     let res = { state: 'none' };
-    if (color && (screen === 'live' || screen === 'done')) res = findMarkers(img.data, W, H, color, buf, showMask ? maskImg.data : null);
+    if (color && (screen === 'live' || screen === 'done')) res = findMarkers(img.data, W, H, color, buf, showMask ? maskImg.data : null, bgFrame);
     if (res.state === 'two') {
       track.L = smooth(track.L, res.L, 0.4); track.R = smooth(track.R, res.R, 0.4);
       const s = Math.hypot(track.R.x - track.L.x, track.R.y - track.L.y) / S.w;
@@ -643,8 +755,9 @@ function guidance(dx, dy, tilt, tol, tolDeg) {
 
     let g = null, dx = null, dy = null, tiltDeg = null, target = null;
     if (screen === 'live' && !paused) {
-      if (picking) {
-        setSay('Tap one of the markers on screen.', 'That teaches me its color.', false);
+      if (!color) {
+        setSay('Hold the picture up against the wall.', S.marker === 'auto' ? 'Looking for your two markers…' : 'Looking for ' + S.marker + ' markers…', false);
+        if (now - lastLostSay > 8000) { say('Hold the picture up against the wall.'); lastLostSay = now; }
         nextBeep = 0;
       } else if (track.L && track.R) {
         target = computeTarget(S, marks, track.scale);
@@ -776,7 +889,7 @@ function guidance(dx, dy, tilt, tol, tolDeg) {
     const tag = $('#stageTag');
     if (screen === 'live' || screen === 'done') {
       tag.className = track.L ? 'on' : 'lost';
-      $('#stageTagText').textContent = picking ? 'Tap a marker' : paused ? 'Paused' : track.L ? 'Tracking' : 'Looking for markers';
+      $('#stageTagText').textContent = !color ? 'Looking for markers' : paused ? 'Paused' : track.L ? 'Tracking' : 'Looking for markers';
     } else { tag.className = 'on'; $('#stageTagText').textContent = screen === 'setup' ? 'Camera' : 'Tap to mark'; }
   }
 
