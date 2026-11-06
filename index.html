@@ -276,57 +276,118 @@ function rgbToHsv(r, g, b) {
   return { h, s: max === 0 ? 0 : d / max, v: max / 255 };
 }
 
-// Find the two marker blobs of the chosen color in an RGBA buffer.
-// Returns { state: 'none' | 'one' | 'two', L, R, count, mask? }
-function findMarkers(data, W, H, color, buf, mask, bgData) {
+// Find the two corner markers of the chosen color in an RGBA buffer.
+// Every matching spot becomes its own blob; then we pick the best pair of small, tight,
+// similar-sized blobs that sit roughly level, about a frame-width apart.
+// opts: { frameIn: frame width in inches, prev: { L, R } from the last frame }
+// Returns { state: 'none' | 'one' | 'two', L, R, na, nb, score, count }
+function findMarkers(data, W, H, color, buf, mask, bgData, opts) {
+  opts = opts || {};
+  const N = W * H;
+  if (!buf.lab || buf.lab.length !== N) { buf.lab = new Int32Array(N); buf.stack = new Int32Array(N); buf.list = new Int32Array(N); }
+  const lab = buf.lab, stack = buf.stack, list = buf.list;
+  lab.fill(0);
   const hTol = color.tol || 16;
   const sMin = Math.max(0.28, color.s * 0.5);
   const vMin = Math.max(0.18, color.v * 0.4);
   let n = 0;
-  for (let y = 0, i = 0; y < H; y++) {
-    for (let x = 0; x < W; x++, i += 4) {
-      const r = data[i], g = data[i + 1], b = data[i + 2];
-      const max = r > g ? (r > b ? r : b) : (g > b ? g : b);
-      const min = r < g ? (r < b ? r : b) : (g < b ? g : b);
-      const d = max - min;
-      if (max === 0 || d / max < sMin || max / 255 < vMin) { if (mask) mask[i + 3] = 0; continue; }
-      let h;
-      if (max === r) h = ((g - b) / d) % 6; else if (max === g) h = (b - r) / d + 2; else h = (r - g) / d + 4;
-      h *= 60; if (h < 0) h += 360;
-      let dh = Math.abs(h - color.h); if (dh > 180) dh = 360 - dh;
-      if (dh > hTol) { if (mask) mask[i + 3] = 0; continue; }
-      if (bgData && matchesHue(bgData, i, color.h, hTol, sMin, vMin)) { if (mask) mask[i + 3] = 0; continue; }
-      if (mask) { mask[i] = 255; mask[i + 1] = 0; mask[i + 2] = 200; mask[i + 3] = 170; }
-      buf.x[n] = x; buf.y[n] = y; n++;
-    }
+  for (let p = 0, i = 0; p < N; p++, i += 4) {
+    const r = data[i], g = data[i + 1], b = data[i + 2];
+    const max = r > g ? (r > b ? r : b) : (g > b ? g : b);
+    const min = r < g ? (r < b ? r : b) : (g < b ? g : b);
+    const d = max - min;
+    if (max === 0 || d / max < sMin || max / 255 < vMin) { if (mask) mask[i + 3] = 0; continue; }
+    let h;
+    if (max === r) h = ((g - b) / d) % 6; else if (max === g) h = (b - r) / d + 2; else h = (r - g) / d + 4;
+    h *= 60; if (h < 0) h += 360;
+    let dh = Math.abs(h - color.h); if (dh > 180) dh = 360 - dh;
+    if (dh > hTol) { if (mask) mask[i + 3] = 0; continue; }
+    if (bgData && matchesHue(bgData, i, color.h, hTol, sMin, vMin)) { if (mask) mask[i + 3] = 0; continue; }
+    if (mask) { mask[i] = 255; mask[i + 1] = 0; mask[i + 2] = 200; mask[i + 3] = 170; }
+    lab[p] = 1; list[n++] = p;
   }
-  const minCount = Math.max(4, Math.round(W * H * 0.00006));
+  const minCount = Math.max(4, Math.round(N * 0.00006));
   if (n < minCount) return { state: 'none', count: n };
-  // 2-means, seeded with leftmost and rightmost points
-  let lx = Infinity, rx = -Infinity, li = 0, ri = 0;
-  for (let k = 0; k < n; k++) { if (buf.x[k] < lx) { lx = buf.x[k]; li = k; } if (buf.x[k] > rx) { rx = buf.x[k]; ri = k; } }
-  let ax = buf.x[li], ay = buf.y[li], bx = buf.x[ri], by = buf.y[ri];
-  let na = 0, nb = 0;
-  for (let it = 0; it < 8; it++) {
-    let sax = 0, say = 0, sbx = 0, sby = 0; na = 0; nb = 0;
-    for (let k = 0; k < n; k++) {
-      const x = buf.x[k], y = buf.y[k];
-      const da = (x - ax) * (x - ax) + (y - ay) * (y - ay);
-      const db = (x - bx) * (x - bx) + (y - by) * (y - by);
-      if (da <= db) { sax += x; say += y; na++; } else { sbx += x; sby += y; nb++; }
+
+  // blobs: connected spots, allowing 1-pixel gaps (glare, sticker edges)
+  const blobs = [];
+  let next = 2;
+  for (let k = 0; k < n; k++) {
+    const start = list[k];
+    if (lab[start] !== 1) continue;
+    const id = next++;
+    let top = 0; stack[top++] = start; lab[start] = id;
+    let cnt = 0, sx = 0, sy = 0, x0 = W, x1 = 0, y0 = H, y1 = 0;
+    while (top) {
+      const q = stack[--top], qx = q % W, qy = (q - qx) / W;
+      cnt++; sx += qx; sy += qy;
+      if (qx < x0) x0 = qx; if (qx > x1) x1 = qx; if (qy < y0) y0 = qy; if (qy > y1) y1 = qy;
+      for (let oy = -2; oy <= 2; oy++) {
+        const ny = qy + oy; if (ny < 0 || ny >= H) continue;
+        for (let ox = -2; ox <= 2; ox++) {
+          const nx = qx + ox; if (nx < 0 || nx >= W) continue;
+          const np = ny * W + nx;
+          if (lab[np] === 1) { lab[np] = id; stack[top++] = np; }
+        }
+      }
     }
-    if (na) { ax = sax / na; ay = say / na; }
-    if (nb) { bx = sbx / nb; by = sby / nb; }
+    if (cnt >= 3) blobs.push({ id, n: cnt, x: sx / cnt, y: sy / cnt, ext: Math.max(x1 - x0 + 1, y1 - y0 + 1) });
   }
-  const sep = Math.hypot(bx - ax, by - ay);
   const minEach = Math.max(3, Math.round(minCount / 2));
-  if (na < minEach || nb < minEach || sep < W * 0.04) {
-    const cx = na >= nb ? ax : bx, cy = na >= nb ? ay : by;
-    return { state: 'one', count: n, P: { x: cx, y: cy } };
+  const cand = blobs.filter((bl) => bl.n >= minEach);
+  if (!cand.length) return { state: 'none', count: n };
+
+  // is (A, B) a believable pair of corner markers?
+  const pairScore = (A, B, checkGap) => {
+    const dx = B.x - A.x, dy = B.y - A.y, sep = Math.hypot(dx, dy);
+    if (sep < W * 0.08) return 0;
+    if (Math.abs(dy) > sep * 0.3) return 0;
+    const ratio = Math.max(A.n, B.n) / Math.min(A.n, B.n);
+    if (ratio > 3.5) return 0;
+    if (A.ext > sep * 0.3 || B.ext > sep * 0.3) return 0;
+    if (opts.frameIn) {
+      const maxPix = Math.pow(4 * sep / opts.frameIn, 2);
+      if (A.n > maxPix || B.n > maxPix) return 0;
+    }
+    if (checkGap) {
+      let hits = 0;
+      for (let t = 0.2; t <= 0.81; t += 0.06) {
+        const gx = Math.round(A.x + dx * t), gy = Math.round(A.y + dy * t);
+        if (lab[gy * W + gx] !== 0) hits++;
+      }
+      if (hits > 2) return 0;
+    }
+    const height = 1.5 - ((A.y + B.y) / 2) / H;  // markers are on the TOP corners: prefer higher pairs
+    return Math.min(A.n, B.n) / ratio / (1 + 5 * Math.abs(dy) / sep) * height;
+  };
+  const done = (A, B, score) => {
+    let L = A, R = B; if (L.x > R.x) { L = B; R = A; }
+    return { state: 'two', count: n, na: L.n, nb: R.n, score, L: { x: L.x, y: L.y }, R: { x: R.x, y: R.y } };
+  };
+
+  // already tracking: stick with the blobs nearest last frame's markers
+  if (opts.prev && opts.prev.L && opts.prev.R) {
+    const ps = Math.hypot(opts.prev.R.x - opts.prev.L.x, opts.prev.R.y - opts.prev.L.y);
+    const rad = Math.max(10, ps * 0.35);
+    const near = (P, skip) => {
+      let best = null, bd = rad;
+      for (const bl of cand) { if (bl === skip) continue; const dd = Math.hypot(bl.x - P.x, bl.y - P.y); if (dd < bd) { bd = dd; best = bl; } }
+      return best;
+    };
+    const A = near(opts.prev.L, null), B = A && near(opts.prev.R, A);
+    if (A && B) { const sc = pairScore(A, B, false); if (sc > 0) return done(A, B, sc); }
   }
-  let L = { x: ax, y: ay }, R = { x: bx, y: by };
-  if (L.x > R.x) { const t = L; L = R; R = t; }
-  return { state: 'two', count: n, na, nb, L, R };
+
+  // otherwise: best pair anywhere (largest few blobs only, to stay fast)
+  cand.sort((p, q) => q.n - p.n);
+  const top = cand.slice(0, 12);
+  let best = null, bestScore = 0;
+  for (let i = 0; i < top.length; i++) for (let j = i + 1; j < top.length; j++) {
+    const sc = pairScore(top[i], top[j], true);
+    if (sc > bestScore) { bestScore = sc; best = [top[i], top[j]]; }
+  }
+  if (best) return done(best[0], best[1], bestScore);
+  return { state: 'one', count: n, P: { x: cand[0].x, y: cand[0].y } };
 }
 
 function matchesHue(data, i, h0, hTol, sMin, vMin) {
@@ -364,29 +425,20 @@ function hueHistogram(data, W, H, bgData) {
   return hist;
 }
 
-// Hands-free: look for a pair of same-colored, similar-sized, roughly level blobs
+// Hands-free: try the most common new vivid colors, and keep the best believable marker pair
 // in spots that were plain on the empty wall (bgData = a frame of the empty wall).
-function autoFind(data, W, H, bgData, buf) {
+function autoFind(data, W, H, bgData, buf, frameIn) {
   const hist = hueHistogram(data, W, H, bgData);
   const minFrac = Math.max(8, W * H * 0.00012) / (W * H);
   const cands = [];
-  for (let b = 0; b < 36; b++) {
-    const v = hist[b];
-    if (v > minFrac) cands.push({ b, v });
-  }
+  for (let b = 0; b < 36; b++) if (hist[b] > minFrac) cands.push({ b, v: hist[b] });
   cands.sort((p, q) => q.v - p.v);
   let best = null;
   for (const c of cands.slice(0, 5)) {
-    const color = { h: c.b * 10 + 5, s: 0.45, v: 0.3, tol: 12 };
-    const r = findMarkers(data, W, H, color, buf, null, bgData);
+    const color = { h: c.b * 10 + 5, s: 0.5, v: 0.3, tol: 12 };
+    const r = findMarkers(data, W, H, color, buf, null, bgData, { frameIn });
     if (r.state !== 'two') continue;
-    const sep = Math.hypot(r.R.x - r.L.x, r.R.y - r.L.y);
-    if (sep < W * 0.08) continue;
-    if (Math.abs(r.R.y - r.L.y) > sep * 0.3) continue;
-    const ratio = r.na / r.nb;
-    if (ratio < 0.33 || ratio > 3) continue;
-    const score = Math.min(r.na, r.nb);
-    if (!best || score > best.score) best = { bin: c.b, color, res: r, score };
+    if (!best || r.score > best.score) best = { bin: c.b, color, res: r, score: r.score };
   }
   return best;
 }
@@ -454,8 +506,8 @@ function guidance(dx, dy, tilt, tol, tolDeg) {
   // color = the marker color being tracked; null while auto-find is still looking
   const presetColor = () => (PRESETS[S.marker] ? Object.assign({}, PRESETS[S.marker]) : null);
   let color = presetColor();
-  let bgFrame = null, lastBgAt = 0;
-  const autoState = { bin: -1, hits: 0, frame: 0 };
+  let bgFrame = null, lastBgAt = 0, autoLockedAt = 0;
+  const autoState = { bin: -1, hits: 0, frame: 0, sep: 0 };
   const marks = { itemL: null, itemR: null, floorY: null, sideL: null, sideR: null };
 
   // ---------- screens ----------
@@ -506,7 +558,7 @@ function guidance(dx, dy, tilt, tol, tolDeg) {
     $('#ringField').style.visibility = S.hanger === 'rings' ? 'visible' : 'hidden';
   }
   segment('#segHanger', 'hanger', refreshHanger); refreshHanger();
-  function resetMarkers() { color = presetColor(); autoState.bin = -1; autoState.hits = 0; }
+  function resetMarkers() { color = presetColor(); autoState.bin = -1; autoState.hits = 0; autoState.sep = 0; }
   function refreshMarkerHint() {
     $('#markerHint').textContent = S.marker === 'auto'
       ? 'I’ll find two matching bright markers on my own when you hold the picture up. If I struggle, pick their color here.'
@@ -723,10 +775,12 @@ function guidance(dx, dy, tilt, tol, tolDeg) {
     }
     // hands-free marker finding: needs the same pair in several checks in a row
     if (!color && screen === 'live' && !paused && ++autoState.frame % 3 === 0) {
-      const best = autoFind(img.data, W, H, bgFrame, buf);
+      const best = autoFind(img.data, W, H, bgFrame, buf, S.w);
       if (best) {
-        const d = Math.abs(best.bin - autoState.bin), same = autoState.bin >= 0 && (d <= 1 || d >= 35);
-        autoState.hits = same ? autoState.hits + 1 : 1; autoState.bin = best.bin;
+        const d = Math.abs(best.bin - autoState.bin);
+        const sep = Math.hypot(best.res.R.x - best.res.L.x, best.res.R.y - best.res.L.y);
+        const same = autoState.bin >= 0 && (d <= 1 || d >= 35) && Math.abs(sep - autoState.sep) < autoState.sep * 0.2;
+        autoState.hits = same ? autoState.hits + 1 : 1; autoState.bin = best.bin; autoState.sep = sep;
         if (autoState.hits >= 4) {
           let r0 = 0, g0 = 0, b0 = 0, c = 0;
           [best.res.L, best.res.R].forEach((p) => {
@@ -737,12 +791,12 @@ function guidance(dx, dy, tilt, tol, tolDeg) {
           });
           const hsv = c ? rgbToHsv(r0 / c, g0 / c, b0 / c) : null;
           color = hsv && hsv.s >= 0.35 ? Object.assign(hsv, { tol: 16 }) : best.color;
-          say('Found your markers.', true);
+          say('Found your markers.', true); autoLockedAt = now; track.lastSeen = now;
         }
       } else autoState.hits = Math.max(0, autoState.hits - 1);
     }
     let res = { state: 'none' };
-    if (color && (screen === 'live' || screen === 'done')) res = findMarkers(img.data, W, H, color, buf, showMask ? maskImg.data : null, bgFrame);
+    if (color && (screen === 'live' || screen === 'done')) res = findMarkers(img.data, W, H, color, buf, showMask ? maskImg.data : null, bgFrame, { frameIn: S.w, prev: track.L && track.R ? { L: track.L, R: track.R } : null });
     if (res.state === 'two') {
       track.L = smooth(track.L, res.L, 0.4); track.R = smooth(track.R, res.R, 0.4);
       const s = Math.hypot(track.R.x - track.L.x, track.R.y - track.L.y) / S.w;
@@ -751,6 +805,7 @@ function guidance(dx, dy, tilt, tol, tolDeg) {
     } else {
       track.state = res.state;
       if (now - track.lastSeen > 400) { track.L = track.R = null; }
+      if (S.marker === 'auto' && color && screen === 'live' && !paused && now - track.lastSeen > 4000 && now - autoLockedAt > 4000) { resetMarkers(); }
     }
 
     let g = null, dx = null, dy = null, tiltDeg = null, target = null;
